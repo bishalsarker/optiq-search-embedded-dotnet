@@ -1,4 +1,10 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="../.dockerignore" />
+    <File Path="../.gitignore" />
+    <File Path="../Dockerfile" />
+    <File Path="../README.md" />
+  </Folder>
   <Project Path="Optiq.Embedded/Optiq.Embedded.csproj" />
   <Project Path="Optiq.Web/Optiq.Web.csproj" />
 </Solution>

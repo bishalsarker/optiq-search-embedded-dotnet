@@ -1,0 +1,6 @@
+@Optiq.Web_HostAddress = http://localhost:5142
+
+GET {{Optiq.Web_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

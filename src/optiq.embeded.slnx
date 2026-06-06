@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Optiq.Embedded/Optiq.Embedded.csproj" />
+  <Project Path="Optiq.Web/Optiq.Web.csproj" />
+</Solution>

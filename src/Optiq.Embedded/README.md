@@ -1,346 +1,200 @@
-# \# 🟢 Optiq
+# Optiq
 
-# 
+An embedded search engine for .NET. Add full-text search, filters, and facets to any application — no Elasticsearch, no external services, no DevOps.
 
-# \[!\[NuGet Version](https://shields.io)](https://nuget.org)
+Backed by **RocksDB** for persistent, crash-safe storage with microsecond read latency.
 
-# \[!\[License](https://shields.io)](LICENSE)
+---
 
-# \[!\[.NET Core](https://shields.io)](https://microsoft.com)
+## Why Optiq
 
-# 
+Most search solutions require running a separate process, managing a server, and dealing with sync issues between your database and your search index. Optiq runs inside your application. There is no separate process. The index never drifts out of sync because writes to the document store and all index keys happen in a single atomic transaction.
 
-# \*\*Optiq\*\* is an open-source, hyper-fast, zero-infrastructure embedded search and NoSQL document database engine built natively for the .NET ecosystem. 
+---
 
-# 
+## Features
 
-# By building directly on top of \*\*RocksDB\*\* (the low-latency log-structured merge-tree engine optimized by Meta), Optiq collapses a document store, a structured database, and an Elasticsearch-style search engine into a single, seamless, in-process library. No heavy server infrastructure, no external process management—just microsecond data access.
+- **Full-text search** — tokenises and indexes any string field. Finds relevant results across multiple fields simultaneously.
+- **Fuzzy matching** — tolerates typos. A search for `headpone` finds `headphone`.
+- **Synonym groups** — `laptop` finds `notebook`. Synonyms are bidirectional, persistent, and take effect immediately.
+- **Exact filters** — filter by string, boolean, or number. Pass an array for OR matching.
+- **Range queries** — filter by price range, date range, or any numeric field using `$gte`, `$lte` and similar operators.
+- **Facet counts** — every search response includes aggregated value counts for filterable fields, ready to power a filter sidebar.
+- **Atomic writes** — document and all index keys are written together in a single `WriteBatch`. The index cannot drift out of sync.
+- **Zero infrastructure** — ships as a NuGet package. No server, no Docker container, no configuration files beyond your `appsettings.json`.
 
-# 
+---
 
-# \---
+## Install
 
-# 
+```bash
+dotnet add package Optiq.Search
+```
 
-# \## ✨ Features \& Capabilities
+---
 
-# 
+## Quick Start
 
-# \*   📦 \*\*Zero-Infrastructure Footprint:\*\* Runs entirely inside your .NET application process. No SQL Server, PostgreSQL, or Java JVM (Elasticsearch) instances to host or configure.
+### 1. Register in Program.cs
 
-# \*   🔒 \*\*Zero Index Drift:\*\* Core data records and multi-tier search indices are updated together inside a single atomic write transaction (`WriteBatch`). They succeed or fail together—your index can \*never\* drift out of sync.
+```csharp
+builder.Services.AddOptiq(options =>
+{
+    options.UseDb("./search.db");
 
-# \*   ⚡ \*\*Sub-Millisecond Queries:\*\* Executes complex structured lookups, numeric/date ranges, and full-text searches simultaneously using highly optimized $\\mathcal{O}(\\log N)$ disk prefix scans.
+    options.Index<Product>(x =>
+    {
+        x.Searchable(p => p.Name);
+        x.Searchable(p => p.Description);
 
-# \*   📊 \*\*Automated Real-Time Facets:\*\* Delivers instant, zero-configuration aggregated counts (navigation sidebars) for all fields marked as filterable, adapting instantly to your active search results.
+        x.Filterable(p => p.Brand);
+        x.Filterable(p => p.Category);
+        x.Filterable(p => p.IsInStock);
 
-# \*   📝 \*\*Permanent Runtime Synonyms:\*\* Add, edit, or clear synonym mapping dictionaries at runtime. Changes are written permanently into a system partition and affect searches instantly.
+        x.Sortable(p => p.Price);
+        x.Sortable(p => p.CreatedAt);
+    });
+});
+```
 
-# \*   🪶 \*\*Garbage-Collector Friendly:\*\* Leverages raw byte streams and structural tracking safely behind clean abstractions to eliminate heap allocations under heavy workloads.
+### 2. Index a document
 
-# 
+```csharp
+public class ProductService(IOptiqContext context)
+{
+    public void Add(Product product)
+        => context.SetEntity<Product>().Upsert(product.Id, product);
+}
+```
 
-# \---
+### 3. Search
 
-# 
+```csharp
+var result = context
+    .SetEntity<Product>()
+    .Search(
+        keyword: "wireless headphones",
+        query:   new OptiqQuery(),
+        skip:    0,
+        take:    20
+    );
 
-# \## ⚙️ How It Works Internally
+// result.Items  → List<Product> for this page
+// result.Facets → aggregated filter counts per field
+```
 
-# 
+---
 
-# Optiq achieves its speed by taking an unstructured key-value byte store (RocksDB) and applying a strict \*\*Inverted Index Schema\*\* across its storage spaces:
+## Filtering
 
-# 
+Filters are passed as a JSON string and use MongoDB-style operators.
 
-# 1\.  \*\*Document Store:\*\* Every entity (e.g., `Product`) gets a dedicated Column Family. Objects are serialized into JSON bytes and saved under a direct pointer lookup: `Key: \[Id] -> Value: \[JSON Bytes]`.
+**Exact match**
+```json
+{ "Brand": "Dell" }
+```
 
-# 2\.  \*\*Lexicographical Indexing:\*\* RocksDB stores keys in permanent alphabetical order. Optiq encodes structural metadata straight into the \*\*Key string itself\*\*, leaving the value empty to save disk space.
+**Array match** — OR logic, returns any item in the list
+```json
+{ "Category": ["Computers", "Laptops"] }
+```
 
-# &#x20;   \*   \*\*Text Search:\*\* Sentences are stripped of punctuation and stop words (\*the, is, and\*), expanded via your live synonyms, and mapped: `idx:search:\[FieldName]:\[Word]:\[Id] -> \[]`.
+**Numeric range**
+```json
+{ "Price": { "$gte": 400, "$lte": 1200 } }
+```
 
-# &#x20;   \*   \*\*Exact Filters:\*\* Normalized lowercased items map straight to the ID: `idx:filter:\[FieldName]:\[Value]:\[Id] -> \[]`.
+**Combined** — multiple keys are AND'd together
+```json
+{
+  "Brand": "Dell",
+  "Price": { "$gte": 500 }
+}
+```
 
-# &#x20;   \*   \*\*Ranges (Numbers \& Dates):\*\* Alphabetical bytes don't sort like numbers. Optiq forces numerical fields into fixed-width zero-padded strings (`00000149.99`) and `DateTime` fields into 12-digit Unix Timestamps (`01767225600000`), forcing alphabetical sorting to perfectly match mathematical values: `idx:range:\[FieldName]:\[PaddedString]:\[Id] -> \[]`.
+In an ASP.NET controller:
 
-# 3\.  \*\*Prefix Seeks:\*\* When you query, an unmanaged RocksDB Iterator snaps instantly to the exact page block matching your criteria bounds in $\\mathcal{O}(\\log N)$ time, avoiding slow full-table scans.
+```csharp
+[HttpGet("products")]
+public ActionResult<OptiqQueryResult<Product>> Search(
+    [FromQuery] string? keyword,
+    [FromQuery] string? filters,
+    [FromQuery] int page     = 1,
+    [FromQuery] int pageSize = 20)
+{
+    var query = string.IsNullOrWhiteSpace(filters)
+        ? new OptiqQuery()
+        : JsonSerializer.Deserialize<OptiqQuery>(filters)!;
 
-# 
+    var result = context
+        .SetEntity<Product>()
+        .Search(keyword, query, skip: (page - 1) * pageSize, take: pageSize);
 
-# \---
+    return Ok(result);
+}
+```
 
-# 
+---
 
-# \## 🚀 Getting Started
+## Synonyms
 
-# 
+Synonym groups are bidirectional and persist across restarts.
 
-# \### 1. Install via NuGet
+```csharp
+// Adding "laptop" also makes "notebook" and "portable" find laptop documents
+context.AddSynonymGroup("laptop", "notebook", "portable");
 
-# ```bash
+// Remove an entire group by any member
+context.RemoveSynonymGroup("laptop");
 
-# dotnet add package Optiq
+// Inspect all active mappings
+Dictionary<string, string[]> all = context.GetAllSynonyms();
+```
 
-# ```
+---
 
-# 
+## How It Works
 
-# \### 2. Register via Dependency Injection (`Program.cs`)
+Optiq encodes query metadata directly into RocksDB key strings, leaving values empty. Because RocksDB stores keys in sorted order, it can jump to any starting point and scan forward in logarithmic time — no full-table scans.
 
-# Configure your data paths, permanent options, and fluent index blueprints easily at application startup:
+| Key pattern | Used for |
+|---|---|
+| `{id}` | Primary document store. Value = JSON bytes. |
+| `idx:search:{Field}:{word}:{id}` | Full-text posting list. One key per (field, token, document). |
+| `idx:filter:{Field}:{value}:{id}` | Exact filter index. Also drives facet counts. |
+| `idx:range:{Field}:{paddedNumber}:{id}` | Range index. Numbers are zero-padded so alphabetical order matches numerical order. |
+| `syn:{word}` *(synonyms CF)* | Synonym mapping. Value = comma-separated synonym list. |
 
-# 
+Every search runs three stages in sequence:
 
-# ```csharp
+1. **Keyword scan** — tokenise the query, expand with synonyms, collect matching IDs from the search index (OR logic across tokens).
+2. **Filter intersection** — apply each filter condition and intersect the result set (AND logic).
+3. **Paginate and hydrate** — slice the ID set, then read and deserialise only the documents on the target page.
 
-# using Microsoft.Extensions.DependencyInjection;
+---
 
-# 
+## Contributing
 
-# var builder = WebApplication.CreateBuilder(args);
+Bug reports, feature requests, and pull requests are welcome.
 
-# 
+For significant changes please open an issue first so we can discuss the approach before you invest time writing code.
 
-# builder.Services.AddOptiq(options =>
+**Areas where contributions are especially useful:**
+- Additional language stop-word lists
+- Multi-field sort support
+- `ReadOnlySpan<byte>` zero-allocation parsing in the index scanner
+- Integration guides for popular .NET frameworks
 
-# {
+```bash
+git clone https://github.com/bishalsarker/optiq-search-embedded-dotnet
+cd optiq
+dotnet restore
+dotnet build
+dotnet test
+```
 
-# &#x20;   // Define the directory path where physical database files will be saved
+---
 
-# &#x20;   options.UseRocksDb("./App\_Data/optiq\_store.db");
+## License
 
-# 
-
-# &#x20;   // Map your structural entity indices using type-safe C# expressions
-
-# &#x20;   options.Index<Product>(x =>
-
-# &#x20;   {
-
-# &#x20;       x.Searchable(p => p.Name);
-
-# &#x20;       x.Searchable(p => p.Description);
-
-# 
-
-# &#x20;       x.Filterable(p => p.Brand);
-
-# &#x20;       x.Filterable(p => p.Category);
-
-# 
-
-# &#x20;       x.Sortable(p => p.Price);
-
-# &#x20;       x.Sortable(p => p.CreatedAt);
-
-# &#x20;   });
-
-# });
-
-# ```
-
-# 
-
-# \### 3. Expose the Unified Web API Endpoint
-
-# Accept MongoDB-style dynamic search queries directly out of standard HTTP query parameters. By binding to `Dictionary<string, JsonElement>`, the endpoint parses complex operator arrays and child parameters safely:
-
-# 
-
-# ```csharp
-
-# using Microsoft.AspNetCore.Mvc;
-
-# using System.Text.Json;
-
-# 
-
-# \[ApiController]
-
-# \[Route("api/\[controller]")]
-
-# public class ProductsController : ControllerBase
-
-# {
-
-# &#x20;   private readonly IOptiqContext \_context;
-
-# 
-
-# &#x20;   public ProductsController(IOptiqContext context) => \_context = context;
-
-# 
-
-# &#x20;   \[HttpGet("query")]
-
-# &#x20;   public ActionResult<OptiqQueryResult<Product>> GetProducts(
-
-# &#x20;       \[FromQuery] string? filters,
-
-# &#x20;       \[FromQuery] int pageNumber = 1,
-
-# &#x20;       \[FromQuery] int pageSize = 10)
-
-# &#x20;   {
-
-# &#x20;       var productSet = \_context.SetEntity<Product>();
-
-# &#x20;       var optiqQuery = new OptiqQuery();
-
-# 
-
-# &#x20;       if (!string.IsNullOrWhiteSpace(filters))
-
-# &#x20;       {
-
-# &#x20;           var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(filters);
-
-# &#x20;           if (parsed != null) optiqQuery = new OptiqQuery(parsed);
-
-# &#x20;       }
-
-# 
-
-# &#x20;       int skip = (pageNumber - 1) \* pageSize;
-
-# &#x20;       
-
-# &#x20;       // Query returns both your paginated Items and automated Facet sidebar metrics together!
-
-# &#x20;       OptiqQueryResult<Product> response = productSet.Query(optiqQuery, skip, pageSize);
-
-# &#x20;       return Ok(response);
-
-# &#x20;   }
-
-# }
-
-# ```
-
-# 
-
-# \---
-
-# 
-
-# \## 📡 Web API Query JSON Syntax
-
-# 
-
-# Optiq evaluates separate parameters as standard logical \*\*`AND`\*\* constraints at the root level.
-
-# 
-
-# \### Direct Exact Match
-
-# ```json
-
-# { "Brand": "Dell" }
-
-# ```
-
-# 
-
-# \### Array Set Match (Implicit "IN" filter)
-
-# Passing a standard bracketed array `\[]` automatically instructs the engine to accept any matching items in the list:
-
-# ```json
-
-# { "Category": \["Computers", "Desktops"] }
-
-# ```
-
-# 
-
-# \### Bounded Numeric \& Timestamp Ranges
-
-# Combine operators (`$gt`, `$gte`, `$lt`, `$lte`) inside a single property block. Optiq resolves open or closed ranges within a single high-performance disk point-seek operation:
-
-# ```json
-
-# {
-
-# &#x20; "Price": { "\\(gte": 400.00, "\\)lte": 1200.00 },
-
-# &#x20; "CreatedAt": { "\\$gte": 1767225600000 }
-
-# }
-
-# ```
-
-# 
-
-# \---
-
-# 
-
-# \## 🗃️ Permanent Runtime Synonyms
-
-# 
-
-# Manage keyword synonym mappings dynamically through your data access layer. These updates persist permanently across application restarts without requiring configuration asset rebuilds:
-
-# 
-
-# ```csharp
-
-# IOptiqContext context = serviceProvider.GetRequiredService<IOptiqContext>();
-
-# 
-
-# // Add a permanent, bidirectional synonym relationship grouping to the database
-
-# context.AddSynonymGroup("laptop", "notebook", "computer");
-
-# 
-
-# // Wipe out a relationship grouping cleanly
-
-# context.RemoveSynonymGroup("laptop");
-
-# 
-
-# // Read all active mappings
-
-# Dictionary<string, string\[]> currentSynonyms = context.GetAllSynonyms();
-
-# ```
-
-# 
-
-# \---
-
-# 
-
-# \## 🤝 Contributing
-
-# 
-
-# Contributions are welcome! If you find a bug or have an optimization idea (such as zero-allocation `ReadOnlySpan<byte>` parsing enhancements or multi-field sorting pipelines), feel free to open an issue or submit a pull request.
-
-# 
-
-# 1\. Fork the Project
-
-# 2\. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-
-# 3\. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-
-# 4\. Push to the Branch (`git push origin feature/AmazingFeature`)
-
-# 5\. Open a Pull Request
-
-# 
-
-# \---
-
-# 
-
-# \## 📄 License
-
-# 
-
-# Distributed under the MIT License. See `LICENSE` file for more details.
-
-
-
+MIT — see [LICENSE](LICENSE) for details.

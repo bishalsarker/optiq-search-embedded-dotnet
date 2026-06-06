@@ -1,14 +1,38 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
 
-  <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
-    <PackageReference Include="RocksDB" Version="10.10.1.649" />
-  </ItemGroup>
+		<PackageId>Optiq.Search</PackageId>
+		<Version>1.0.0</Version>
+		<Authors>bishalsarker</Authors>
+		<Company>Optiq</Company>
+		<Description>Optiq is an open-source, hyper-fast, zero-infrastructure embedded search and NoSQL document database engine built natively for the .NET ecosystem.</Description>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+		<PackageProjectUrl>https://github.com/bishalsarker/optiq-search-embedded-dotnet</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/bishalsarker/optiq-search-embedded-dotnet</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.8" />
+		<PackageReference Include="RocksDB" Version="10.10.1.649" />
+
+		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\"/>
+	</ItemGroup>
 
 </Project>
